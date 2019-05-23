@@ -1,0 +1,136 @@
+#!/usr/bin/env python
+# -*- encoding: utf-8 -*-
+# Created on 2019-05-13 01:19:52
+# Project: wmbgs
+
+from pyspider.libs.base_handler import *
+from bs4 import BeautifulSoup
+import re
+import time
+import csv
+import sys
+import os
+sys.setrecursionlimit(20000)
+class Handler(BaseHandler):
+    crawl_config = {
+    }
+
+    @every(minutes=24 * 60)
+    def on_start(self):
+        self.crawl('http://www.wmbgs.com/forum.php?mod=forumdisplay&fid=42', callback=self.index_page)
+
+    @config(age=10 * 24 * 60 * 60)
+    def index_page(self, response):
+        soup=BeautifulSoup(response.text)
+        href=soup.select('.new')
+        textpage=[]
+        for item in href:
+            item=str(item)
+            textpage.append(re.search(r'class="s xst" href="(.*)" onclick',item).group(1))
+        for each in textpage:
+            time.sleep(0.1)
+            self.crawl(each, callback=self.detail_page)
+        nextpage=soup.select('#fd_page_bottom .nxt')
+        if nextpage!=[]:
+            nextpage=str(nextpage)
+            nextpageurl=re.search('href="(.*)" rel',nextpage).group(1)
+            self.crawl(nextpageurl,callback=self.index_page)
+            
+    @config(priority=2)
+    def detail_page(self, response):
+        soup=BeautifulSoup(response.text)
+        title=response.doc('title').text()[:-6]
+        if soup.select('.locked')!=[]:
+            content=['有隐藏内容']
+        else:
+            if soup.select('font')!=[]:
+                content=soup.select('.t_fsz td')
+                if content!=[]:
+                    content=str(content)
+                    content=content.replace('</font>','')
+                    content=content.replace('<br/>','')
+                    content=content.replace('<strong>','')
+                    content=content.replace('</strong>','')
+                    content=content.replace('</div>','\n')
+                    content=re.sub('<div align=.*?>','',content)   
+                    content=re.sub('<font color=.*?>','',content)         
+                    content=re.sub('<font face=.*?>','',content)     
+                    content=re.sub('<font style=.*?>','',content)  
+                    content=re.sub('<font size=.*?>','',content)                    
+                    content=re.sub('<p style=.*?>','',content)      
+                    content=re.sub('<p>','',content)
+                    content=re.sub('</p>','',content)
+                    content=content.replace('</td>','')       
+                    content=content.replace(re.search('<td class="t_f" id="postmessage_\d+">',content).group(),'')
+                    content=content.replace('[','')
+                    content=content.replace(']','')
+                    if re.search('<td class="t_f" id="postmessage_\d+">',content)!=None:
+                        content=re.split('<td class="t_f" id="postmessage_\d+">',content,1) 
+                        content=str(content[0])
+                    content=content.replace('\u3000','')
+                    content=content.replace('\u00A0','')
+                    content=content.replace('\u0020','')                        
+                else:
+                    content=soup.select('font')
+                    content=str(content)
+                    content=content.replace('</font>','/r/n')
+                    content=content.replace('<br/>','')
+                    content=content.replace('<strong>','')
+                    content=content.replace('</strong>','')
+                    content=re.sub(', <font face=.*?>','',content)         
+                    content=re.sub(', <font style=.*?>','',content)
+                    content=re.sub('<font face=.*?>','',content)     
+                    content=re.sub('<font style=.*?>','',content)     
+                    content=re.sub('<font color=.*?>','',content)   
+                    content=content.replace('[','')
+                    content=content.replace(']','')
+                    content=content.replace(re.search('<td class="t_f" id="postmessage_\d+">',content).group(),'')
+                    if re.search('<td class="t_f" id="postmessage_\d+">',content)!=None:
+                        content=re.split('<td class="t_f" id="postmessage_\d+">',content,1) 
+                        content=str(content[0])
+                    content=content.replace('\u3000','')
+                    content=content.replace('\u00A0','')
+                    content=content.replace('\u0020','')
+            else:
+                content=soup.select('.t_fsz td') 
+                content=str(content) 
+                content=content.replace('<br/>','') 
+                content=content.replace('</td>','')  
+                content=content.replace('</strong>','') 
+                content=content.replace('<strong>','') 
+                content=content.replace('</div>','\n') 
+                content=re.sub('<div align=.*?>','',content)   
+                content=content.replace(re.search('<td class="t_f" id="postmessage_\d+">',content).group(),'')  
+                content=content.replace('[','') 
+                content=content.replace(']','')
+                if re.search('<td class="t_f" id="postmessage_\d+">',content)!=None: 
+                    content=re.split('<td class="t_f" id="postmessage_\d+">',content,1)  
+                    content=str(content[0]) 
+                content=content.replace('\u3000','') 
+                content=content.replace('\u00A0','') 
+                content=content.replace('\u0020','')             
+            path='/home/spider/wmbgs-test/'+title+'.doc'
+            downloaded=Ture
+            for n in os.listdir('/home/spider/wmbgs/wmbgs_docx/'):
+                if n==title+'.docx':
+                    downloaded=False
+            if downloaded:
+                try:
+                    content_GB=content.encode('GB2312')
+                    title_GB=title.encode('GB2312')
+                    with open(path,'wb') as f:
+                        f.write(title_GB)
+                        f.write(content_GB)
+                    time.sleep(2)
+                    return {
+                        "title": title
+                    }
+                except UnicodeEncodeError:  
+                    with open('/home/spider/wmbgs-u/'+title+'.doc','w') as f:
+                        f.write(title)
+                        f.write(content)
+                    time.sleep(2)
+                    return {
+                        "title": title
+                    }
+
